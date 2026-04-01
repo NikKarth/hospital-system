@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Hospital Order Management</title>
+  <style>
+    body { font-family: sans-serif; margin: 14px; }
+    section { margin-bottom: 20px; }
+    table { border-collapse: collapse; width: 100%; }
+    th,td { border: 1px solid #ccc; padding: 6px; text-align:left; }
+    .actions button { margin-right: 5px; }
+    .log { max-height: 220px; overflow: auto; border: 1px solid #ddd; padding: 6px; background:#f9f9f9; }
+  </style>
+</head>
+<body>
+  <h1>Hospital Order System</h1>
+
+  <section>
+    <h2>Submit New Order</h2>
+    <form id="submitForm">
+      <label>Type: <select id="type"><option>LAB</option><option>MEDICATION</option><option>IMAGING</option></select></label><br/>
+      <label>Patient: <input id="patient" required></label><br/>
+      <label>Clinician: <input id="clinician" required></label><br/>
+      <label>Description: <input id="description" required></label><br/>
+      <label>Priority: <select id="priority"><option>ROUTINE</option><option>URGENT</option><option>STAT</option></select></label><br/>
+      <button type="submit">Submit</button>
+    </form>
+    <div id="submitStatus"></div>
+  </section>
+
+  <section>
+    <h2>Order Queue</h2>
+    <table>
+      <thead><tr><th>Type</th><th>Patient</th><th>Clinician</th><th>Priority</th><th>Status</th><th>Claimed By</th><th>Actions</th></tr></thead>
+      <tbody id="orderRows"></tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Command Log</h2>
+    <div id="commandLog" class="log">Loading...</div>
+  </section>
+
+  <script>
+    const http = (path, opts = {}) => fetch(path, {headers: {'Content-Type': 'application/json'}, ...opts}).then(r => r.json().catch(() => ({}))).then(data=>({ok: opts.method==='GET' || opts.method==='POST', data})).catch(err=>({ok:false, data:{error:err.message}}));
+
+    function refresh() {
+      fetch('/api/orders').then(r=>r.json()).then(orders=> {
+        const tbody = document.getElementById('orderRows');
+        tbody.innerHTML='';
+        orders.forEach(o=>{
+          const tr=document.createElement('tr');
+          tr.innerHTML=`<td>${o.type}</td><td>${o.patientName}</td><td>${o.clinician}</td><td>${o.priority}</td><td>${o.status}</td><td>${o.claimedBy||''}</td><td class="actions"></td>`;
+          const actions = tr.querySelector('.actions');
+          if (o.status==='PENDING') {
+            actions.innerHTML=`<button onclick="claim('${o.id}')">Claim</button><button onclick="cancel('${o.id}')">Cancel</button>`;
+          } else if (o.status==='IN_PROGRESS') {
+            actions.innerHTML=`<button onclick="complete('${o.id}','${o.claimedBy||''}')">Complete</button>`;
+          }
+          tbody.appendChild(tr);
+        });
+      });
+      fetch('/api/audit/commands').then(r=>r.json()).then(log=>{
+        const box = document.getElementById('commandLog');
+        box.innerHTML = log.map(e=>`${e.when} ${e.type} ${e.orderId} ${e.actor}`).join('<br/>');
+      });
+    }
+
+    setInterval(refresh, 3000);
+    refresh();
+
+    document.getElementById('submitForm').onsubmit = function(e){
+      e.preventDefault();
+      const payload={
+        type: document.getElementById('type').value,
+        patientName: document.getElementById('patient').value,
+        clinician: document.getElementById('clinician').value,
+        description: document.getElementById('description').value,
+        priority: document.getElementById('priority').value
+      };
+      fetch('/api/orders',{method:'POST', body:JSON.stringify(payload), headers:{'Content-Type':'application/json'}})
+        .then(r=>r.json())
+        .then(data=>{ document.getElementById('submitStatus').textContent = data.orderId ? 'Created '+data.orderId : 'Failed: '+(data.error || JSON.stringify(data)); refresh(); })
+        .catch(err=>{ document.getElementById('submitStatus').textContent = 'Error: '+err; });
+    };
+
+    function claim(id){
+      const actor=prompt('Fulfilment staff name:'); if(!actor) return;
+      fetch(`/api/orders/${id}/claim?actor=${encodeURIComponent(actor)}`, {method:'POST'}).then(refresh);
+    }
+    function complete(id){
+      const actor=prompt('Fulfilment staff name (must match claimer):'); if(!actor) return;
+      fetch(`/api/orders/${id}/complete?actor=${encodeURIComponent(actor)}`, {method:'POST'}).then(refresh);
+    }
+    function cancel(id){
+      const actor=prompt('Clinician name:'); if(!actor) return;
+      fetch(`/api/orders/${id}/cancel?actor=${encodeURIComponent(actor)}`, {method:'POST'}).then(refresh);
+    }
+  </script>
+</body>
+</html>
