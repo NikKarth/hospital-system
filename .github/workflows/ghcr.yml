@@ -3,10 +3,7 @@ name: Build & Push Docker to GHCR
 on:
   push:
     branches:
-      - main
-  pull_request:
-    branches:
-      - main
+      - part_2
 
 jobs:
   build-and-push:
@@ -35,8 +32,8 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker build -t ghcr.io/nikkarth/hospital-order-system:latest .
+          docker build -t ghcr.io/nikkarth/hospital-order-system:part_2 .
 
       - name: Push Docker image
         run: |
-          docker push ghcr.io/nikkarth/hospital-order-system:latest
+          docker push ghcr.io/nikkarth/hospital-order-system:part_2
