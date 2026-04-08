@@ -14,8 +14,15 @@ public class EmailSummaryNotificationDecorator extends NotificationDecorator {
     @Override
     public void notify(Order order, String event) {
         super.notify(order, event);
-        logger.info("EmailSummary: toRole={}, subject='Order Update', body='orderId={}, type={}, status={}, event={}'",
-                deriveRole(event), order.getId(), order.getType(), order.getStatus(), event);
+        String claimedBy = order.getClaimedBy();
+        if (claimedBy == null || claimedBy.isBlank()) {
+            logger.info("EmailSummary: toRole={}, subject='Order Update', body='patient={}, clinician={}, orderId={}, type={}, status={}, event={}'",
+                deriveRole(event), order.getPatientName(), order.getClinician(), order.getId(), order.getType(), order.getStatus(), event);
+            return;
+        }
+
+        logger.info("EmailSummary: toRole={}, subject='Order Update', body='patient={}, clinician={}, claimedBy={}, orderId={}, type={}, status={}, event={}'",
+            deriveRole(event), order.getPatientName(), order.getClinician(), claimedBy, order.getId(), order.getType(), order.getStatus(), event);
     }
 
     private String deriveRole(String event) {

@@ -17,6 +17,14 @@ public class InAppAlertNotificationDecorator extends NotificationDecorator {
     public void notify(Order order, String event) {
         super.notify(order, event);
         int updated = counter.incrementAndGet();
-        logger.info("InAppAlert: badgeCount={}, orderId={}, event={}", updated, order.getId(), event);
+        String claimedBy = order.getClaimedBy();
+        if (claimedBy == null || claimedBy.isBlank()) {
+            logger.info("InAppAlert: badgeCount={}, patient={}, clinician={}, orderId={}, event={}",
+                    updated, order.getPatientName(), order.getClinician(), order.getId(), event);
+            return;
+        }
+
+        logger.info("InAppAlert: badgeCount={}, patient={}, clinician={}, claimedBy={}, orderId={}, event={}",
+                updated, order.getPatientName(), order.getClinician(), claimedBy, order.getId(), event);
     }
 }

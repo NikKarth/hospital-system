@@ -9,7 +9,14 @@ public class LoggingNotificationService implements NotificationService {
 
     @Override
     public void notify(Order order, String event) {
-        logger.info("Notification: actor={}, orderId={}, type={}, status={}, event={}",
-                order.getClinician(), order.getId(), order.getType(), order.getStatus(), event);
+        String claimedBy = order.getClaimedBy();
+        if (claimedBy == null || claimedBy.isBlank()) {
+            logger.info("Notification: patient={}, clinician={}, orderId={}, type={}, status={}, event={}",
+                    order.getPatientName(), order.getClinician(), order.getId(), order.getType(), order.getStatus(), event);
+            return;
+        }
+
+        logger.info("Notification: patient={}, clinician={}, claimedBy={}, orderId={}, type={}, status={}, event={}",
+                order.getPatientName(), order.getClinician(), claimedBy, order.getId(), order.getType(), order.getStatus(), event);
     }
 }

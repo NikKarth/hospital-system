@@ -99,4 +99,17 @@ class OrderManagerWeek2Tests {
         manager.setDepartmentStrategy("LAB", "DEADLINE_FIRST");
         assertTrue(manager.timeRemainingToDeadlineMillis(order).isPresent());
     }
+
+    @Test
+    void claimNotifiesClinicianChannelsForInAppAndEmail() {
+        OrderManager manager = new OrderManager();
+        manager.updateNotificationChannels("CLINICIAN", Set.of("CONSOLE", "IN_APP", "EMAIL"));
+
+        String orderId = manager.submitOrder(OrderType.LAB, "P9", "Dr I", "Panel", Priority.ROUTINE);
+        int beforeClaim = manager.getInAppAlertCount();
+
+        manager.claimOrder(orderId, "Tech1");
+
+        assertEquals(beforeClaim + 1, manager.getInAppAlertCount());
+    }
 }

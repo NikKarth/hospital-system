@@ -207,7 +207,7 @@ public class OrderManager {
             order.setStatus(Status.IN_PROGRESS);
             order.setClaimedBy(actor);
             orderAccess.saveOrder(order);
-            notifyByRole(order, "CLAIMED_BY_" + actor, "FULFILMENT");
+            notifyByRoles(order, "CLAIMED_BY_" + actor, "FULFILMENT", "CLINICIAN");
             recordCommand(new CommandLogEntry("CLAIM", orderId, actor));
         }
     }
@@ -349,8 +349,18 @@ public class OrderManager {
     }
 
     private void notifyByRole(Order order, String event, String role) {
+        notifyByRoles(order, event, role);
+    }
+
+    private void notifyByRoles(Order order, String event, String... roles) {
         NotificationService composed = new LoggingNotificationService();
-        Set<NotificationChannel> channels = notificationChannelsByRole.getOrDefault(role, EnumSet.of(NotificationChannel.CONSOLE));
+        EnumSet<NotificationChannel> channels = EnumSet.noneOf(NotificationChannel.class);
+        for (String role : roles) {
+            channels.addAll(notificationChannelsByRole.getOrDefault(role, EnumSet.of(NotificationChannel.CONSOLE)));
+        }
+        if (channels.isEmpty()) {
+            channels.add(NotificationChannel.CONSOLE);
+        }
 
         if (channels.contains(NotificationChannel.IN_APP)) {
             composed = new InAppAlertNotificationDecorator(composed, inAppAlertCounter);
