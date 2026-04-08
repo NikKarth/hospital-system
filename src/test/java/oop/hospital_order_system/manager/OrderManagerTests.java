@@ -41,7 +41,7 @@ class OrderManagerTests {
         assertEquals(Status.CANCELLED, cancelled.getStatus());
 
         List<CommandLogEntry> log = manager.getCommandLog();
-        assertEquals(5, log.size());
+        assertEquals(6, log.size());
     }
 
     @Test
@@ -54,12 +54,20 @@ class OrderManagerTests {
     }
 
     @Test
-    void cannotCancelNonPendingOrder() {
+    void canCancelInProgressButNotCompletedOrder() {
         OrderManager manager = new OrderManager();
         String orderId = manager.submitOrder(OrderType.LAB, "Pat", "Dr Saul", "Test", Priority.ROUTINE);
         manager.claimOrder(orderId, "Tech1");
-        IllegalStateException ex = assertThrows(IllegalStateException.class, () -> manager.cancelOrder(orderId, "Dr Saul"));
-        assertTrue(ex.getMessage().contains("pending"));
+
+        manager.cancelOrder(orderId, "Dr Saul");
+        Order cancelled = manager.getOrderById(orderId).orElseThrow();
+        assertEquals(Status.CANCELLED, cancelled.getStatus());
+
+        String completedId = manager.submitOrder(OrderType.LAB, "Pat2", "Dr Saul", "Test2", Priority.ROUTINE);
+        manager.claimOrder(completedId, "Tech2");
+        manager.completeOrder(completedId, "Tech2");
+        IllegalStateException ex = assertThrows(IllegalStateException.class, () -> manager.cancelOrder(completedId, "Dr Saul"));
+        assertTrue(ex.getMessage().contains("pending or in-progress"));
     }
 
     @Test

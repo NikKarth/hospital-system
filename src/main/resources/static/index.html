@@ -10,10 +10,44 @@
     th,td { border: 1px solid #ccc; padding: 6px; text-align:left; }
     .actions button { margin-right: 5px; }
     .log { max-height: 220px; overflow: auto; border: 1px solid #ddd; padding: 6px; background:#f9f9f9; }
+    .inline { display: inline-block; margin-right: 16px; }
+    .badge { display:inline-block; min-width:18px; border-radius:9px; background:#d93025; color:#fff; padding:2px 6px; font-size:12px; }
   </style>
 </head>
 <body>
-  <h1>Hospital Order System</h1>
+  <h1>Hospital Order System <span id="alertBadge" class="badge">0</span></h1>
+
+  <section>
+    <h2>Week 2 Settings</h2>
+    <div class="inline">
+      <label>Department:
+        <select id="deptSelect">
+          <option>LAB</option>
+          <option>PHARMACY</option>
+          <option>RADIOLOGY</option>
+          <option>ALL</option>
+        </select>
+      </label>
+      <label>Strategy:
+        <select id="strategySelect"></select>
+      </label>
+      <button onclick="saveTriageSetting()">Save Triage Strategy</button>
+    </div>
+    <div class="inline">
+      <label>Role:
+        <select id="roleSelect">
+          <option>CLINICIAN</option>
+          <option>FULFILMENT</option>
+          <option>ADMIN</option>
+        </select>
+      </label>
+      <label><input id="notifyConsole" type="checkbox" checked> Console</label>
+      <label><input id="notifyInApp" type="checkbox"> In-App</label>
+      <label><input id="notifyEmail" type="checkbox"> Email</label>
+      <button onclick="saveNotificationSetting()">Save Notification Channels</button>
+    </div>
+    <div id="settingsStatus"></div>
+  </section>
 
   <section>
     <h2>Submit New Order</h2>
@@ -30,10 +64,26 @@
 
   <section>
     <h2>Order Queue</h2>
+    <label>Queue Department View:
+      <select id="queueDepartment" onchange="refresh()">
+        <option>ALL</option>
+        <option>LAB</option>
+        <option>PHARMACY</option>
+        <option>RADIOLOGY</option>
+      </select>
+    </label>
     <table>
-      <thead><tr><th>Type</th><th>Patient</th><th>Clinician</th><th>Priority</th><th>Status</th><th>Claimed By</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Type</th><th>Patient</th><th>Clinician</th><th>Priority</th><th>Status</th><th>Claimed By</th><th>Time Remaining</th><th>Actions</th></tr></thead>
       <tbody id="orderRows"></tbody>
     </table>
+  </section>
+
+  <section>
+    <h2>Admin Actions</h2>
+    <button onclick="undoLast()">Undo Last Command</button>
+    <label>Replay Index: <input id="replayIndex" type="number" min="0" value="0"></label>
+    <button onclick="replaySelected()">Replay Command</button>
+    <div id="adminStatus"></div>
   </section>
 
   <section>
@@ -42,32 +92,108 @@
   </section>
 
   <script>
-    const http = (path, opts = {}) => fetch(path, {headers: {'Content-Type': 'application/json'}, ...opts}).then(r => r.json().catch(() => ({}))).then(data=>({ok: opts.method==='GET' || opts.method==='POST', data})).catch(err=>({ok:false, data:{error:err.message}}));
-
     function refresh() {
-      fetch('/api/orders').then(r=>r.json()).then(orders=> {
+      const department = document.getElementById('queueDepartment').value;
+      fetch('/api/orders/queue?department=' + encodeURIComponent(department)).then(r=>r.json()).then(orders=> {
         const tbody = document.getElementById('orderRows');
         tbody.innerHTML='';
         orders.forEach(o=>{
           const tr=document.createElement('tr');
-          tr.innerHTML=`<td>${o.type}</td><td>${o.patientName}</td><td>${o.clinician}</td><td>${o.priority}</td><td>${o.status}</td><td>${o.claimedBy||''}</td><td class="actions"></td>`;
+          tr.innerHTML=`<td>${o.type}</td><td>${o.patientName}</td><td>${o.clinician}</td><td>${o.priority}</td><td>${o.status}</td><td>${o.claimedBy||''}</td><td>${formatRemaining(o.timeRemainingMillis)}</td><td class="actions"></td>`;
           const actions = tr.querySelector('.actions');
           if (o.status==='PENDING') {
             actions.innerHTML=`<button onclick="claim('${o.id}')">Claim</button><button onclick="cancel('${o.id}')">Cancel</button>`;
           } else if (o.status==='IN_PROGRESS') {
-            actions.innerHTML=`<button onclick="complete('${o.id}','${o.claimedBy||''}')">Complete</button>`;
+            actions.innerHTML=`<button onclick="complete('${o.id}')">Complete</button><button onclick="cancel('${o.id}')">Cancel</button>`;
           }
           tbody.appendChild(tr);
         });
       });
       fetch('/api/audit/commands').then(r=>r.json()).then(log=>{
         const box = document.getElementById('commandLog');
-        box.innerHTML = log.map(e=>`${e.when} ${e.type} ${e.orderId} ${e.actor}`).join('<br/>');
+        box.innerHTML = log.map((e, idx)=>`[${idx}] ${e.when} ${e.type} ${e.orderId} ${e.actor}`).join('<br/>');
+      });
+      fetch('/api/orders/notifications/in-app-count').then(r=>r.json()).then(data=>{
+        document.getElementById('alertBadge').textContent = data.count ?? 0;
       });
     }
 
+    function formatRemaining(ms) {
+      if (ms === null || ms === undefined) return '';
+      const overdue = ms < 0;
+      const total = Math.floor(Math.abs(ms) / 1000);
+      const h = Math.floor(total / 3600);
+      const m = Math.floor((total % 3600) / 60);
+      const s = total % 60;
+      const hh = String(h).padStart(2, '0');
+      const mm = String(m).padStart(2, '0');
+      const ss = String(s).padStart(2, '0');
+      return overdue ? `OVERDUE ${hh}:${mm}:${ss}` : `${hh}:${mm}:${ss}`;
+    }
+
     setInterval(refresh, 3000);
+    loadSettings();
     refresh();
+
+    function loadSettings() {
+      fetch('/api/orders/settings/triage').then(r=>r.json()).then(data => {
+        const strategySelect = document.getElementById('strategySelect');
+        strategySelect.innerHTML = '';
+        (data.availableStrategies || []).forEach(strategy => {
+          const option = document.createElement('option');
+          option.value = strategy;
+          option.textContent = strategy;
+          strategySelect.appendChild(option);
+        });
+      });
+      fetch('/api/orders/settings/notifications').then(r=>r.json()).then(settings => {
+        const role = document.getElementById('roleSelect').value;
+        applyNotificationCheckboxes(settings[role] || ['CONSOLE']);
+      });
+    }
+
+    document.getElementById('roleSelect').addEventListener('change', () => {
+      fetch('/api/orders/settings/notifications').then(r=>r.json()).then(settings => {
+        const role = document.getElementById('roleSelect').value;
+        applyNotificationCheckboxes(settings[role] || ['CONSOLE']);
+      });
+    });
+
+    function applyNotificationCheckboxes(channels) {
+      const normalized = new Set(channels);
+      document.getElementById('notifyConsole').checked = normalized.has('CONSOLE');
+      document.getElementById('notifyInApp').checked = normalized.has('IN_APP');
+      document.getElementById('notifyEmail').checked = normalized.has('EMAIL');
+    }
+
+    function saveTriageSetting() {
+      const payload = {
+        department: document.getElementById('deptSelect').value,
+        strategy: document.getElementById('strategySelect').value
+      };
+      fetch('/api/orders/settings/triage', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) })
+        .then(async r => ({ok:r.ok, data: await r.json().catch(() => ({}))}))
+        .then(res => {
+          document.getElementById('settingsStatus').textContent = res.ok ? 'Triage strategy updated' : 'Failed: ' + (res.data.error || 'unknown');
+          refresh();
+        });
+    }
+
+    function saveNotificationSetting() {
+      const channels = [];
+      if (document.getElementById('notifyConsole').checked) channels.push('CONSOLE');
+      if (document.getElementById('notifyInApp').checked) channels.push('IN_APP');
+      if (document.getElementById('notifyEmail').checked) channels.push('EMAIL');
+      const payload = {
+        role: document.getElementById('roleSelect').value,
+        channels
+      };
+      fetch('/api/orders/settings/notifications', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) })
+        .then(async r => ({ok:r.ok, data: await r.json().catch(() => ({}))}))
+        .then(res => {
+          document.getElementById('settingsStatus').textContent = res.ok ? 'Notification channels updated' : 'Failed: ' + (res.data.error || 'unknown');
+        });
+    }
 
     document.getElementById('submitForm').onsubmit = function(e){
       e.preventDefault();
@@ -95,6 +221,25 @@
     function cancel(id){
       const actor=prompt('Clinician name:'); if(!actor) return;
       fetch(`/api/orders/${id}/cancel?actor=${encodeURIComponent(actor)}`, {method:'POST'}).then(refresh);
+    }
+
+    function undoLast() {
+      fetch('/api/orders/admin/undo', {method:'POST'})
+        .then(async r => ({ok:r.ok, data: await r.json().catch(() => ({}))}))
+        .then(res => {
+          document.getElementById('adminStatus').textContent = res.ok ? 'Undo successful' : 'Undo failed: ' + (res.data.error || 'unknown');
+          refresh();
+        });
+    }
+
+    function replaySelected() {
+      const index = document.getElementById('replayIndex').value;
+      fetch('/api/orders/admin/replay/' + encodeURIComponent(index), {method:'POST'})
+        .then(async r => ({ok:r.ok, data: await r.json().catch(() => ({}))}))
+        .then(res => {
+          document.getElementById('adminStatus').textContent = res.ok ? 'Replay successful' : 'Replay failed: ' + (res.data.error || 'unknown');
+          refresh();
+        });
     }
   </script>
 </body>
