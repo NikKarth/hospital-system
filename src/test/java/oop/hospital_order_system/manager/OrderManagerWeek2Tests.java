@@ -112,4 +112,26 @@ class OrderManagerWeek2Tests {
 
         assertEquals(beforeClaim + 1, manager.getInAppAlertCount());
     }
+
+    @Test
+    void urgentEscalatesToStatWhenRecentMatchingStatExists() {
+        OrderManager manager = new OrderManager();
+
+        manager.submitOrder(OrderType.LAB, "P10", "Dr J", "CBC panel", Priority.STAT);
+        String urgentId = manager.submitOrder(OrderType.LAB, "P11", "Dr K", "CBC panel", Priority.URGENT);
+        Order urgent = manager.getOrderById(urgentId).orElseThrow();
+
+        assertEquals(Priority.STAT, urgent.getPriority());
+    }
+
+    @Test
+    void urgentDoesNotEscalateWhenDescriptionDoesNotMatch() {
+        OrderManager manager = new OrderManager();
+
+        manager.submitOrder(OrderType.LAB, "P12", "Dr L", "Troponin", Priority.STAT);
+        String urgentId = manager.submitOrder(OrderType.LAB, "P13", "Dr M", "CBC panel", Priority.URGENT);
+        Order urgent = manager.getOrderById(urgentId).orElseThrow();
+
+        assertEquals(Priority.URGENT, urgent.getPriority());
+    }
 }

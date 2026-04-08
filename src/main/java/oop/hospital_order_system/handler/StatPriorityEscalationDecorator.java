@@ -3,12 +3,11 @@ package oop.hospital_order_system.handler;
 import oop.hospital_order_system.access.OrderAccess;
 import oop.hospital_order_system.domain.Order;
 import oop.hospital_order_system.domain.Priority;
-import oop.hospital_order_system.domain.Status;
 
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
+import java.util.Locale;
 
 public class StatPriorityEscalationDecorator extends OrderHandlerDecorator {
     private final OrderAccess orderAccess;
@@ -24,19 +23,32 @@ public class StatPriorityEscalationDecorator extends OrderHandlerDecorator {
 
     @Override
     public void handle(Order order) {
-        if (order.getPriority() == Priority.STAT) {
-            Instant cutoff = Instant.now(clock).minus(escalationWindow);
-            List<Order> candidates = orderAccess.listAllOrders();
-            for (Order candidate : candidates) {
-                if (candidate.getType() == order.getType()
-                        && candidate.getPriority() == Priority.URGENT
-                        && candidate.getStatus() == Status.PENDING
-                        && !candidate.getSubmittedAt().isBefore(cutoff)) {
-                    candidate.setPriority(Priority.STAT);
-                    orderAccess.saveOrder(candidate);
+        if (order.getPriority() == Priority.URGENT) {
+            Instant now = Instant.now(clock);
+            Instant cutoff = now.minus(escalationWindow);
+            String description = normalizeDescription(order.getDescription());
+            for (Order candidate : orderAccess.listAllOrders()) {
+                if (candidate.getType() != order.getType()) {
+                    continue;
                 }
+                if (candidate.getPriority() != Priority.STAT) {
+                    continue;
+                }
+                if (!normalizeDescription(candidate.getDescription()).equals(description)) {
+                    continue;
+                }
+                if (candidate.getSubmittedAt().isBefore(cutoff) || candidate.getSubmittedAt().isAfter(now)) {
+                    continue;
+                }
+
+                order.setPriority(Priority.STAT);
+                break;
             }
         }
         inner.handle(order);
+    }
+
+    private String normalizeDescription(String description) {
+        return description == null ? "" : description.trim().toLowerCase(Locale.ROOT);
     }
 }
